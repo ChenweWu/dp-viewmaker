@@ -51,7 +51,7 @@ class PretrainViewMakerSystem(pl.LightningModule):
         self.batch_size = config.optim_params.batch_size
         self.loss_name = self.config.loss_params.objective
         self.t = self.config.loss_params.t
-
+        self.automatic_optimization = False
         self.train_dataset, self.val_dataset = datasets.get_image_datasets(
             config.data_params.dataset,
             config.data_params.default_augmentations or 'none',
@@ -68,6 +68,7 @@ class PretrainViewMakerSystem(pl.LightningModule):
             len(self.train_dataset),
             self.config.model_params.out_dim,
         )
+        self.validation_step_outputs = []
 
     def view(self, imgs):
         if 'Expert' in self.config.system:
@@ -222,12 +223,16 @@ class PretrainViewMakerSystem(pl.LightningModule):
         num_correct = torch.sum(neighbor_labels.cpu() == labels.cpu()).item()
         return num_correct, batch_size
 
-    def training_step(self, batch, batch_idx, optimizer_idx):
+    def training_step(self, batch, batch_idx):
+
         emb_dict = self.forward(batch)
-        emb_dict['optimizer_idx'] = torch.tensor(optimizer_idx, device=self.device)
+        optim_idx = batch_idx%2
+
+        emb_dict['optimizer_idx'] = torch.tensor(optim_idx, device=self.device)
         return emb_dict
     
     def training_step_end(self, emb_dict):
+        encoder_optim, viewmaker_optim = self.optimizers
         encoder_loss, view_maker_loss = self.get_losses_for_batch(emb_dict, train=True)
 
         # Handle Tensor (dp) and int (ddp) cases
@@ -239,11 +244,18 @@ class PretrainViewMakerSystem(pl.LightningModule):
             metrics = {
                 'encoder_loss': encoder_loss, 'temperature': self.t
             }
+
+            encoder_optim.zero_grad()
+            self.manual_backward(encoder_loss)
+            encoder_optim.step()
             return {'loss': encoder_loss, 'log': metrics}
         else:
             metrics = {
                 'view_maker_loss': view_maker_loss,
             }
+            viewmaker_optim.zero_grad()
+            self.manual_backward(viewmaker_loss)
+            viewmaker_optim.step()
             return {'loss': view_maker_loss, 'log': metrics}
 
     def validation_step(self, batch, batch_idx):
@@ -264,10 +276,11 @@ class PretrainViewMakerSystem(pl.LightningModule):
             'val_num_correct': torch.tensor(num_correct, dtype=float, device=self.device),
             'val_num_total': torch.tensor(batch_size, dtype=float, device=self.device),
         })
-
+        self.validation_step_outputs.append(output)
         return output
 
-    def validation_epoch_end(self, outputs):
+    def on_validation_epoch_end(self):
+        outputs= self.validation_step_outputs
         metrics = {}
         for key in outputs[0].keys():
             try:
@@ -280,24 +293,25 @@ class PretrainViewMakerSystem(pl.LightningModule):
         val_acc = num_correct / float(num_total)
         metrics['val_acc'] = val_acc
         progress_bar = {'acc': val_acc}
+        self.validation_step_outputs.clear()
         return {'val_loss': metrics['val_loss'], 
                 'log': metrics, 
                 'val_acc': val_acc, 
                 'progress_bar': progress_bar}
 
-    def optimizer_step(self, current_epoch, batch_nb, optimizer, optimizer_idx, 
-                       second_order_closure=None, on_tpu=False, using_native_amp=False, using_lbfgs=False):
-        if not self.config.optim_params.viewmaker_freeze_epoch:
-            super().optimizer_step(current_epoch, batch_nb, optimizer, optimizer_idx)
-            return
+    # def optimizer_step(self, current_epoch, batch_nb, optimizer, optimizer_idx, 
+    #                    second_order_closure=None, on_tpu=False, using_native_amp=False, using_lbfgs=False):
+    #     if not self.config.optim_params.viewmaker_freeze_epoch:
+    #         super().optimizer_step(current_epoch, batch_nb, optimizer, optimizer_idx)
+    #         return
 
-        if optimizer_idx == 0:
-            optimizer.step()
-            optimizer.zero_grad()
-        elif current_epoch < self.config.optim_params.viewmaker_freeze_epoch:
-            # Optionally freeze the viewmaker at a certain pretraining epoch.
-            optimizer.step()
-            optimizer.zero_grad()
+    #     if optimizer_idx == 0:
+    #         optimizer.step()
+    #         optimizer.zero_grad()
+    #     elif current_epoch < self.config.optim_params.viewmaker_freeze_epoch:
+    #         # Optionally freeze the viewmaker at a certain pretraining epoch.
+    #         optimizer.step()
+    #         optimizer.zero_grad()
 
     def configure_optimizers(self):
         # Optimize temperature with encoder.
@@ -327,7 +341,7 @@ class PretrainViewMakerSystem(pl.LightningModule):
         else:
             raise ValueError(f'Optimizer {view_optim_name} not implemented')
         
-        return [encoder_optim, view_optim], []
+        return encoder_optim, view_optim
 
     def train_dataloader(self):
         return create_dataloader(self.train_dataset, self.config, self.batch_size)

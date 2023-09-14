@@ -62,22 +62,23 @@ def run(args, gpu_device=None):
     ckpt_callback = pl.callbacks.ModelCheckpoint(
         os.path.join(config.exp_dir, 'checkpoints'),
         save_top_k=-1,
-        period=1,
+        every_n_epochs=5,
     )
+    all_callbacks = callbacks + [ckpt_callback]
     wandb.init(project='image', entity='viewmaker', name=config.exp_name, config=config, sync_tensorboard=True)
     trainer = pl.Trainer(
         default_root_dir=config.exp_dir,
-        gpus=gpu_device,
+        accelerator = 'auto',
          # 'ddp' is usually faster, but we use 'dp' so the negative samples 
          # for the whole batch are used for the SimCLR loss
         # distributed_backend=config.distributed_backend or 'dp',
         max_epochs=config.num_epochs,
         min_epochs=config.num_epochs,
-        checkpoint_callback=ckpt_callback,
-        resume_from_checkpoint=args.ckpt or config.continue_from_checkpoint,
+      
+        # resume_from_checkpoint=args.ckpt or config.continue_from_checkpoint,
         profiler=args.profiler,
         precision=config.optim_params.precision or 32,
-        callbacks=callbacks,
+        callbacks=all_callbacks,
         val_check_interval=config.val_check_interval or 1.0,
         limit_val_batches=config.limit_val_batches or 1.0,
     )
