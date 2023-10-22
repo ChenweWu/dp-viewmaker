@@ -1,0 +1,8 @@
+pytorch-lightning
+wandb
+dotmap
+pandas
+nlpaug
+matplotlib
+torch_dct
+torchaudio
