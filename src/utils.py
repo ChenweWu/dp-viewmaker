@@ -56,7 +56,7 @@ class RETINAL(Dataset):
         image = ToTensorV2()(image=image)["image"]
         labels1 = self.labels_1[idx]
         labels2 = self.labels_2[idx]
-        return image, labels1, labels2
+        return image, labels1, labels2-1
 
 
 def loadRetinalData(train_path, val_path, df_train, df_val, batch_size, image_size):
