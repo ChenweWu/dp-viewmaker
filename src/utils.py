@@ -61,6 +61,7 @@ class RETINAL(Dataset):
     # labels2 sex
 
 
+
 def loadRetinalData(train_path, val_path, df_train, df_val, batch_size, image_size):
     train_dataset = RETINAL(df_train, train_path, 'Class', 'patient_sex', transform=get_transform(image_size, 'train'))
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
