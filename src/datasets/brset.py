@@ -22,9 +22,10 @@ import cv2
 
 from PIL import Image
 
+
 class RETINAL(Dataset):
-    def __init__(self, train = True,root = '../../dataset/a-brazilian-multilabel-ophthalmological-dataset-brset-1.0.0/',
-                 image_size = 224,image_transforms = True):
+    def __init__(self, train=True, root='../../dataset/a-brazilian-multilabel-ophthalmological-dataset-brset-1.0.0/',
+                 image_size=224, image_transforms=True):
         class_column1 = 'Class'
         class_column2 = 'patient_sex'
 
@@ -46,9 +47,7 @@ class RETINAL(Dataset):
         self.retinal_path = root + 'fundus_photos/'
         self.img_size = image_size
         if image_transforms is True:
-            self.transform = self.get_transform('train')
-
-
+            self.transform = self.get_transform()
 
     def __len__(self):
         return self.studyuid.shape[0]
@@ -56,7 +55,7 @@ class RETINAL(Dataset):
     def __getitem__(self, idx):
         path = self.studyuid[idx]
         # print(path)
-        path = os.path.join(self.retinal_path,  path + ".jpg" )
+        path = os.path.join(self.retinal_path, "img['img_" + path + ".jpg.pkl']" + ".png")
         #print(path)
         if not os.path.exists(path):
             raise FileNotFoundError(f"File {path} does not exist")
@@ -70,26 +69,13 @@ class RETINAL(Dataset):
         labels2 = self.labels_2[idx]
         return image, labels1, labels2-1
 
-    def get_transform(self, split):
-        transforms_train = albumentations.Compose([
+    def get_transform(self):
+        transforms = albumentations.Compose([
             albumentations.Resize(self.img_size, self.img_size),
             albumentations.Normalize(mean=[0.59088606, 0.2979608, 0.10854383], std=[0.28389975, 0.15797651, 0.06909362],
                                      always_apply=True, max_pixel_value=255.0),
         ])
-        transforms_val = albumentations.Compose([
-            albumentations.Resize(self.img_size, self.img_size),
-            albumentations.Normalize(mean=[0.59088606, 0.2979608, 0.10854383], std=[0.28389975, 0.15797651, 0.06909362],
-                                     always_apply=True, max_pixel_value=255.0),
-        ])
-        if split == 'train':
-            return transforms_train
-        elif split == 'val':
-            return transforms_val
-        else:
-            raise NotImplementedError
-
-
-
+        return transforms
 
 
 if __name__ == '__main__':
