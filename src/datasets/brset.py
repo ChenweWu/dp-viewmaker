@@ -8,10 +8,7 @@ import torch.utils.data as data
 from torchvision import transforms, datasets
 
 from src.datasets.root_paths import DATA_ROOTS
-
-
 import os
-import torch
 from torch.utils.data import DataLoader, Dataset
 
 import pandas as pd
@@ -24,15 +21,15 @@ from PIL import Image
 
 
 class RETINAL(Dataset):
-    def __init__(self, train=True, root='../../dataset/a-brazilian-multilabel-ophthalmological-dataset-brset-1.0.0/',
+    def __init__(self, train=True, root='./dataset/a-brazilian-multilabel-ophthalmological-dataset-brset-1.0.0/',
                  image_size=224, image_transforms=True):
         class_column1 = 'Class'
         class_column2 = 'patient_sex'
 
         if train:
-            df_subset = pd.read_csv(root+"/train.csv")
+            df_subset = pd.read_csv(root+"train.csv")
         else:
-            df_subset = pd.read_csv(root+'/val.csv')
+            df_subset = pd.read_csv(root+'val.csv')
 
         self.studyuid = df_subset["image_id"].astype(str).values
 
@@ -56,7 +53,7 @@ class RETINAL(Dataset):
         path = self.studyuid[idx]
         # print(path)
         path = os.path.join(self.retinal_path, "img['img_" + path + ".jpg.pkl']" + ".png")
-        #print(path)
+        # print(path)
         if not os.path.exists(path):
             raise FileNotFoundError(f"File {path} does not exist")
         image = cv2.imread(path)
@@ -67,7 +64,7 @@ class RETINAL(Dataset):
         image = ToTensorV2()(image=image)["image"]
         labels1 = self.labels_1[idx]
         labels2 = self.labels_2[idx]
-        return image, labels1, labels2-1
+        return idx, image, labels1, labels2-1
 
     def get_transform(self):
         transforms = albumentations.Compose([

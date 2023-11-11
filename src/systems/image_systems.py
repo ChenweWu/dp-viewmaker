@@ -31,6 +31,7 @@ import pytorch_lightning as pl
 import wandb
 import timm
 
+
 def create_dataloader(dataset, config, batch_size, shuffle=True, drop_last=True):
     loader = DataLoader(
         dataset, 
@@ -55,23 +56,23 @@ class PretrainViewMakerSystem(pl.LightningModule):
         self.loss_name = self.config.loss_params.objective
         self.t = self.config.loss_params.t
         self.automatic_optimization = False
-        self.train_dataset, self.val_dataset = datasets.get_image_datasets(
-            config.data_params.dataset,
-            config.data_params.default_augmentations or 'none',
-        )
+        # self.train_dataset, self.val_dataset = datasets.get_image_datasets(
+        #     config.data_params.dataset,
+        #     config.data_params.default_augmentations or 'none',
+        # )
         # Used for computing knn validation accuracy
-        train_labels = self.train_dataset.dataset.targets
-        self.train_ordered_labels = np.array(train_labels)
+        # train_labels = self.train_dataset.dataset.targets
+        # self.train_ordered_labels = np.array(train_labels)
         self.viewmaker_loss_weight = self.config.loss_params.view_maker_loss_weight
         self.model = self.create_encoder()
         self.attacker = self.load_attacker(self.config.attacker_path)
         self.viewmaker = self.create_viewmaker()
         
         # Used for computing knn validation accuracy.
-        self.memory_bank = MemoryBank(
-            len(self.train_dataset),
-            self.config.model_params.out_dim,
-        )
+        # self.memory_bank = MemoryBank(
+        #     len(self.train_dataset),
+        #     self.config.model_params.out_dim,
+        # )
         self.validation_step_outputs = []
 
     def view(self, imgs):
@@ -82,16 +83,14 @@ class PretrainViewMakerSystem(pl.LightningModule):
         return views
 
     def load_attacker(self, attacker_path):
-        model = models.Resnet200D(model_name='resnet200d',number_of_classes=2)
-        model.load_state_dict(torch.load(attacker_path))
+        model = models.Resnet200D(model_name='resnet200d', number_of_classes=2)
+        # model.load_state_dict(torch.load(attacker_path))  # 路径缺失
         return model
-
 
     def create_encoder(self):
         '''Create the encoder model.'''
         if self.config.model_params.resnet_small:
-            # ResNet variant for smaller inputs (e.g. CIFAR-10).
-            encoder_model = resnet_small.ResNet18(self.config.model_params.out_dim)
+            encoder_model = resnet.resnet18(low_dim=self.config.model_params.out_dim)
         else:
             resnet_class = getattr(
                 torchvision.models, 
@@ -112,7 +111,7 @@ class PretrainViewMakerSystem(pl.LightningModule):
 
     def create_viewmaker(self):
         view_model = viewmaker.Viewmaker(
-            num_channels=self.train_dataset.NUM_CHANNELS,
+            num_channels=3,
             distortion_budget=self.config.model_params.view_bound_magnitude,
             activation=self.config.model_params.generator_activation or 'relu',
             clamp=self.config.model_params.clamp_views,
@@ -135,18 +134,18 @@ class PretrainViewMakerSystem(pl.LightningModule):
             #img = self.normalize(img)
         return self.model(img)
     
-    def normalize(self, imgs):
-        # These numbers were computed using compute_image_dset_stats.py
-        if 'cifar' in self.config.data_params.dataset:
-            mean = torch.tensor([0.491, 0.482, 0.446], device=imgs.device)
-            std = torch.tensor([0.247, 0.243, 0.261], device=imgs.device)
-        elif 'brset' in self.config.data_params.dataset:
-            mean = torch.tensor([0.59088606, 0.2979608, 0.10854383], device=imgs.device)
-            std = torch.tensor([0.28389975, 0.15797651, 0.06909362], device=imgs.device)
-        else:
-            raise ValueError(f'Dataset normalizer for {self.config.data_params.dataset} not implemented')
-        imgs = (imgs - mean[None, :, None, None]) / std[None, :, None, None]
-        return imgs
+    # def normalize(self, imgs):
+    #     # These numbers were computed using compute_image_dset_stats.py
+    #     if 'cifar' in self.config.data_params.dataset:
+    #         mean = torch.tensor([0.491, 0.482, 0.446], device=imgs.device)
+    #         std = torch.tensor([0.247, 0.243, 0.261], device=imgs.device)
+    #     elif 'brset' in self.config.data_params.dataset:
+    #         mean = torch.tensor([0.59088606, 0.2979608, 0.10854383], device=imgs.device)
+    #         std = torch.tensor([0.28389975, 0.15797651, 0.06909362], device=imgs.device)
+    #     else:
+    #         raise ValueError(f'Dataset normalizer for {self.config.data_params.dataset} not implemented')
+    #     imgs = (imgs - mean[None, :, None, None]) / std[None, :, None, None]
+    #     return imgs
 
     def forward(self, batch, train=True):
         indices, img, labels1, labels2 = batch
@@ -155,11 +154,11 @@ class PretrainViewMakerSystem(pl.LightningModule):
             view1_embs_d = self.model(view1)
             view1_embs_s = self.attacker(view1)
             emb_dict = {
-                'indices': indices,#batch id
+                'indices': indices,  # batch id
                 'view1_embs_d': view1_embs_d,
                 'view1_embs_s': view1_embs_s,
-                'labels1':batch[-2],
-                'labels2':batch[-1]
+                'labels1': batch[-2],
+                'labels2': batch[-1]
             }
         elif self.loss_name == 'AdversarialNCELoss':
             view1 = self.view(img)
@@ -201,20 +200,20 @@ class PretrainViewMakerSystem(pl.LightningModule):
             encoder_loss, view_maker_loss = loss_function.get_loss()
             img_embs = emb_dict['view1_embs']
         elif self.loss_name == 'FocalLoss':
-            #view_maker_loss_weight = self.config.loss_params.view_maker_loss_weight
+            # view_maker_loss_weight = self.config.loss_params.view_maker_loss_weight
             loss_function_encoder = MultiClassFocalLoss(
-                emb1=emb_dict['view1_embs_d'],
+                embs1=emb_dict['view1_embs_d'],
                 labels=emb_dict['labels1'],
-                alpha=[0.93, 0.044, 0.026]
+                alpha=torch.tensor([0.93, 0.044, 0.026]).to(self.device)
             )
             loss_function_viewmaker = MultiClassFocalLoss(
-                emb1=emb_dict['view1_embs_s'],
+                embs1=emb_dict['view1_embs_s'],
                 labels=emb_dict['labels2'],
-                alpha = [0.38, 0.62]
+                alpha=torch.tensor([0.38, 0.62]).to(self.device)
             )
             encoder_loss = loss_function_encoder.get_loss()
-            viewmaker_loss = -1 * self.viewmaker_loss_weight * loss_function_viewmaker.get_loss()
-            img_embs = emb_dict['view1_embs']
+            view_maker_loss = -1 * self.viewmaker_loss_weight * loss_function_viewmaker.get_loss()
+            # img_embs = emb_dict['view1_embs']
 
         elif self.loss_name == 'AdversarialNCELoss':
             view_maker_loss_weight = self.config.loss_params.view_maker_loss_weight
@@ -232,17 +231,16 @@ class PretrainViewMakerSystem(pl.LightningModule):
         else:
             raise Exception(f'Objective {self.loss_name} is not supported.') 
         
-        # Update memory bank.
-        if train:
-            with torch.no_grad():
-                if self.loss_name == 'AdversarialNCELoss':
-                    new_data_memory = loss_function.updated_new_data_memory()
-                    self.memory_bank.update(emb_dict['indices'], new_data_memory)
-                else:
-                    new_data_memory = utils.l2_normalize(img_embs, dim=1)
-                    self.memory_bank.update(emb_dict['indices'], new_data_memory)
-
-        return encoder_loss, viewmaker_loss
+        # # Update memory bank.
+        # if train:
+        #     with torch.no_grad():
+        #         if self.loss_name == 'AdversarialNCELoss':
+        #             new_data_memory = loss_function.updated_new_data_memory()
+        #             self.memory_bank.update(emb_dict['indices'], new_data_memory)
+        #         else:
+        #             new_data_memory = utils.l2_normalize(img_embs, dim=1)
+        #             self.memory_bank.update(emb_dict['indices'], new_data_memory)
+        return encoder_loss, view_maker_loss
 
     def get_nearest_neighbor_label(self, img_embs, labels):
         '''
@@ -264,10 +262,8 @@ class PretrainViewMakerSystem(pl.LightningModule):
         return num_correct, batch_size
 
     def training_step(self, batch, batch_idx):
-
         emb_dict = self.forward(batch)
-        optim_idx = batch_idx%2
-
+        optim_idx = batch_idx % 2
         emb_dict['optimizer_idx'] = torch.tensor(optim_idx, device=self.device)
         return emb_dict
     
@@ -306,8 +302,8 @@ class PretrainViewMakerSystem(pl.LightningModule):
         # else:
         #     _, img, _, _, _ = batch
         #     img_embs = self.get_repr(img)  # Need encoding of image without augmentations (only normalization).
-        embs1 = emb_dict['']
-        embs2 = emb_dict['']
+        embs1 = emb_dict['view1_embs_d']
+        embs2 = emb_dict['view1_embs_s']
         labels1 = batch[-2].cpu().numpy()
         labels2 = batch[-1].cpu().numpy()
         softmax = torch.nn.Softmax(dim=1)
@@ -350,8 +346,7 @@ class PretrainViewMakerSystem(pl.LightningModule):
         #progress_bar_d = {'acc': val_acc_d}
         #progress_bar_s = {'acc': val_acc_s}
         self.validation_step_outputs.clear()
-        return {'val_loss': metrics['val_loss'],
-                'log': metrics, 
+        return {'log': metrics,
                 'val_acc_d': val_acc_d,
                 'val_acc_s': val_acc_s,
                 #'progress_bar': progress_bar
@@ -404,17 +399,13 @@ class PretrainViewMakerSystem(pl.LightningModule):
     def train_dataloader(self):
         train_dataset = RETINAL(image_transforms=True)
         train_loader = DataLoader(train_dataset, batch_size=self.batch_size, shuffle=True)
-        valid_dataset = RETINAL(image_transforms=True)
-        valid_loader = DataLoader(valid_dataset, batch_size=self.batch_size, shuffle=False)
-        #return create_dataloader(self.train_dataset, self.config, self.batch_size)
-        return train_loader,valid_loader
+        return train_loader
 
     def val_dataloader(self):
-        test_dataset = RETINAL(train=False,image_transforms=True)
-        test_loader = DataLoader(test_dataset, batch_size=self.batch_size, shuffle=False)
-        return test_loader
-        #return create_dataloader(self.val_dataset, self.config, self.batch_size,
-        #                         shuffle=False, drop_last=False)
+        valid_dataset = RETINAL(train=False, image_transforms=True)
+        valid_loader = DataLoader(valid_dataset, batch_size=self.batch_size, shuffle=False)
+        return valid_loader
+
 
 
 class PretrainExpertSystem(PretrainViewMakerSystem):
@@ -832,4 +823,7 @@ class TransferExpertSystem(TransferViewMakerSystem):
         return self.model(embs.view(batch_size, -1))
 
 if __name__ == '__main__':
-    system=PretrainViewMakerSystem()
+    system = PretrainViewMakerSystem()
+
+
+
