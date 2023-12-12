@@ -1,0 +1,27 @@
+{
+    "device":		  "cuda:0",	
+    "model":              "resnet200d",
+    "seed":               871,
+    "optimizer":          "Adam",
+    "lr":                 5e-5,
+    "NUM_EPOCH":          80,
+    "batch_size":         32,
+    "num_loader_workers": 4,
+    "chkpt_step":         5,
+    "path":               "/home/ubuntu/output/br_dr/orig/",
+    "retinal_path":       "/home/ubuntu/data/br_images/BR_Snow_orig/",
+    "train_path":         "/home/ubuntu/viewmaker-privacy/dataset/a-brazilian-multilabel-ophthalmological-dataset-brset-1.0.0/train.csv",
+    "test_path":          "/home/ubuntu/viewmaker-privacy/dataset/a-brazilian-multilabel-ophthalmological-dataset-brset-1.0.0/val.csv",
+    "loss":               "FocalLoss",
+    "image_size":         256,
+    "channel_avg":       [0.59, 0.2998 ,  0.111],
+    "channel_std":       [0.305, 0.1798 ,0.0977],
+    "crop_dims":         [500, 1000, 3500, 3000],
+    "class_column":      "Class",
+    "n_classes":         3,
+    "class_dist":        [12482, 574,345],
+
+    "k":                  2,
+    "stratified_grouped": true,
+    "val_perc":           "None"
+}

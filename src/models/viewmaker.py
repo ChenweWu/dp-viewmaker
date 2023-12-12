@@ -17,7 +17,7 @@ ACTIVATIONS = {
 
 class Viewmaker(torch.nn.Module):
     '''Viewmaker network that stochastically maps a multichannel 2D input to an output of the same size.'''
-    def __init__(self, num_channels=3, distortion_budget=0.05, activation='relu',  
+    def __init__(self, num_channels=3, distortion_budget=0.5, activation='relu',  
                 clamp=True, frequency_domain=False, downsample_to=False, num_res_blocks=3):
         '''Initialize the Viewmaker network.
 
@@ -111,6 +111,7 @@ class Viewmaker(torch.nn.Module):
     
     def get_delta(self, y_pixels, eps=1e-4):
         '''Constrains the input perturbation by projecting it onto an L1 sphere'''
+        # print(self.distortion_budget)
         distortion_budget = self.distortion_budget
         delta = torch.tanh(y_pixels) # Project to [-1, 1]
         avg_magnitude = delta.abs().mean([1,2,3], keepdim=True)

@@ -7,12 +7,13 @@ from src.utils.callbacks import MoCoLRScheduler
 import random, torch, numpy
 
 import pytorch_lightning as pl
-import wandb
+# import wandb
 
 torch.backends.cudnn.benchmark = True
 
 SYSTEM = {
     'PretrainViewMakerSystem': image_systems.PretrainViewMakerSystem,
+    'XRay': image_systems.PretrainXRayViewMakerSystem,
     'PretrainExpertSystem': image_systems.PretrainExpertSystem,
     'TransferViewMakerSystem': image_systems.TransferViewMakerSystem,
     'TransferExpertSystem': image_systems.TransferExpertSystem,
@@ -65,7 +66,7 @@ def run(args, gpu_device=None):
         every_n_epochs=5,
     )
     all_callbacks = callbacks + [ckpt_callback]
-    wandb.init(project='image', entity='viewmaker', name=config.exp_name, config=config, sync_tensorboard=True)
+    # wandb.init(project='image', entity='viewmaker', name=config.exp_name, config=config, sync_tensorboard=True)
     trainer = pl.Trainer(
         default_root_dir=config.exp_dir,
         accelerator = 'auto',

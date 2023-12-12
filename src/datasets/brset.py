@@ -21,7 +21,7 @@ from PIL import Image
 
 
 class RETINAL(Dataset):
-    def __init__(self, train=True, root='./dataset/a-brazilian-multilabel-ophthalmological-dataset-brset-1.0.0/',
+    def __init__(self, train=True, root='/home/ubuntu/data/br_images/BR_Snow_orig/',
                  image_size=224, image_transforms=True):
         class_column1 = 'Class'
         class_column2 = 'patient_sex'
@@ -41,7 +41,7 @@ class RETINAL(Dataset):
             self.labels_2 = df_subset[class_column2].astype('category').cat.codes.values
         else:
             self.labels_2 = df_subset[class_column2].values
-        self.retinal_path = root + 'fundus_photos/'
+        self.retinal_path = root 
         self.img_size = image_size
         if image_transforms is True:
             self.transform = self.get_transform()
