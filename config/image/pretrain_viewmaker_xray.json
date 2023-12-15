@@ -19,7 +19,7 @@
         "projection_head": true,
         "noise_dim": 200,
         "view_bound_magnitude": 8,
-        "num_res_blocks": 3
+        "num_res_blocks": 5
     },
     "loss_params": {
         "objective": "FocalLoss",
