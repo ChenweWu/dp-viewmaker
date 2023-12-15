@@ -1,20 +1,26 @@
-# Viewmaker Networks: Learning Views for Unsupervised Representation Learning
+# DP-Viewmaker: Neural Obfuscation of Private Attributes in Medical Images
+Chenwei Wu, Chunyu Wang
 
-[Alex Tamkin](https://www.alextamkin.com/), [Mike Wu](https://www.mikehwu.com/), and [Noah Goodman](http://cocolab.stanford.edu/ndg.html)
+Umich Class project for EECS598 Biomedical AI with Prof Liyue Shen
 
-Paper link: [https://arxiv.org/abs/2010.07432](https://arxiv.org/abs/2010.07432)
+Thanks Dr. Alex Tamkin at Stanford for providing the model codes for viewmaker networks.
+Thanks Dr. Leo Anthony Celi, Dr. Luis Nakayama at MIT for providing the datasets and inspirations.
+
 
 ## 0) Background
 
-Viewmaker networks are a new, more general method for self-supervised learning that enables pretraining with _the same algorithm_ on a diverse range of different modalities—including images, speech, and sensor data.
-
-Viewmaker networks _learn_ a family of data transformations with a generative model, as opposed to prior approaches which use data transformations developed by domain experts through trial and error.
-
-Viewmakers are trained adversarially with respect to the pretraining loss—this means they are compatible with many different pretraining objectives. We present results for SimCLR and InstDisc, but viewmakers are compatible with any view-based objective, including MoCo, BYOL, SimSiam, and SwAV.
-
-Some example distortions learned for images (each frame is generated with a different random noise input to the viewmaker)
-
-![Image](img/viewmaker.gif)
+Patient sensitive information protection has been a increasingly hot concern for
+the medical machine learning community. Recent work has shown that medical
+imaging datasets across multiple modalities (ophthalmology, radiology) are at risk
+of adversary privacy attacks, posing a huge hindrance to public data sharing and
+fair clinical AI. Yet recent work in differential privacy for medical images has
+fallen short in either retaining downstream clinical utility or generalizability across
+different domains. Hence we propose a neural de-identification framework that
+works across different medical imaging modalities. Our DP-Viewmaker framework
+obfuscates a medical image in an adversarial way, protecting it from autonomous
+attacker and preserving its pathological features. Using gender as a proxy for
+private attributes, our model achieved near perfect de-identification while retaining
+high disease classification performance on retinal images and X-ray images.
 
 ## 1) Install Dependencies
 
@@ -39,17 +45,27 @@ source init_env.sh
 Now, you can run experiments for the different modalities as follows:
 
 ```console
-scripts/run_sensor.py config/sensor/pretrain_viewmaker_pamap2_simclr.json --gpu-device 0
+python scripts/run_image.py config/image/pretrain_viewmaker_xray.json --gpu-device 0
 ```
 
-This command runs viewmaker pretraining on the [Pamap2](https://archive.ics.uci.edu/ml/datasets/pamap2+physical+activity+monitoring) wearable sensor dataset using GPU #0. (If you have a multi-GPU node, you can specify other GPUs.)
+This command runs viewmaker pretraining on the CheXpert X-Ray dataset using GPU #0. 
 
-The `scripts` directory holds:
-- `run_image.py`: for pretraining and running linear evaluation on CIFAR-10
-- `run_meta_transfer.py`: for running linear evaluation on a range of transfer datasets, including many from MetaDataset
-- `run_audio.py`: for pretraining on LibriSpeech and running linear evaluation on a range of transfer datasets
-- `run_sensor.py`: for pretraining on Pamap2 and running transfer, supervised, and semi-supervised learning on different splits of Pamap2
-- `eval_cifar10_c.py`: for evaluating a linear evaluation model on the CIFAR-10-C dataset for assessing robustness to common corruptions
+```console
+python scripts/run_image.py config/image/pretrain_viewmaker_brset.json--gpu-device 0
+```
+
+This command runs viewmaker pretraining on the BR-SET Retinal Images dataset using GPU #0.
+
+(If you have a multi-GPU node, you can specify other GPUs.)
+
+```console
+python downstream.py
+```
+This command runs downstream evaluation on BR-Set Image Classification based on ./dsconfig.json
+```console
+python ds_visuals.py
+```
+This command runs downstream visualizations on BR-Set Image De-identification
 
 The `config` directory holds configuration files for the different experiments,  specifying the hyperparameters from each experiment. The first field in every config file is `exp_base` which specifies the base directory to save experiment outputs, which you should change for your own setup.
 
