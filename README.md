@@ -1,5 +1,5 @@
 # DP-Viewmaker: Neural Obfuscation of Private Attributes in Medical Images
-Chenwei Wu, Chunyu Wang
+
 
 Umich Class project for EECS598 Biomedical AI with Prof Liyue Shen
 
