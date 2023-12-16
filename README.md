@@ -77,13 +77,31 @@ Training curves and other metrics are logged using [wandb.ai](wandb.ai)
 
 
 [Training wrapper](scripts/run_image.py)
+
+
 [BR-Set Dataset](src/datasets/brset.py)
+
+
 [CheXpert Dataset](src/datasets/chexpert.py)
+
+
 [Viewmaker](src/models/viewmaker.py)
+
+
 [Encoder & Attacker](src/models/resnet.py)
+
+
 [Objective Functions (simclr, adversarial, focal, multilabel focal)](src/objectives)
+
+
 [Pytorch-Lightning Train and Eval Systems](src/systems/image_systems.py)
+
+
 [Utils](src/utils)
+
+
 [Visuals](ds_visuals.py)
+
+
 [Downstreams](downstream.py)
 
