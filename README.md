@@ -72,3 +72,18 @@ The `config` directory holds configuration files for the different experiments, 
 You are responsible for downloading the datasets. Update the paths in `src/datasets/root_paths.py`.
 
 Training curves and other metrics are logged using [wandb.ai](wandb.ai)
+
+## 3) Essential codes files
+
+
+[Training wrapper](scripts/run_image.py)
+[BR-Set Dataset](src/datasets/brset.py)
+[CheXpert Dataset](src/datasets/chexpert.py)
+[Viewmaker](src/models/viewmaker.py)
+[Encoder & Attacker](src/models/resnet.py)
+[Objective Functions (simclr, adversarial, focal, multilabel focal)](src/objectives)
+[Pytorch-Lightning Train and Eval Systems](src/systems/image_systems.py)
+[Utils](src/utils)
+[Visuals](ds_visuals.py)
+[Downstreams](downstream.py)
+
