@@ -14,7 +14,7 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 import torchvision
 # from sklearn.metrics import accuracy_score, f1_score,confusion_matrix
-from torchmetrics import F1Score, ConfusionMatrix
+from torchmetrics import F1Score, ConfusionMatrix, Accuracy
 from src.datasets import datasets
 from src.models import resnet_small, resnet, models
 from src.models.transfer import LogisticRegression
@@ -108,7 +108,12 @@ class PretrainViewMakerSystem(pl.LightningModule):
         self.fl_e = FocalLoss(gamma=2, alpha=torch.tensor(class_weights).to(self.device))
         self.fl_v = FocalLoss(gamma=2, alpha = torch.tensor(gender_weights).to(self.device))
         self.best_att = 0.99
-
+        self.cm = ConfusionMatrix(task="multiclass", num_classes=3)
+        self.cm2 = ConfusionMatrix(task="multiclass", num_classes=4)
+        self.f = F1Score(task="multiclass", num_classes=3)
+        self.f2 = F1Score(task="multiclass", num_classes=4)
+        self.a = Accuracy(task="multiclass", num_classes=3)
+        self.a2 = Accuracy(task="multiclass", num_classes=4)
     def view(self, imgs):
         if 'Expert' in self.config.system:
             raise RuntimeError('Cannot call self.view() with Expert system')
@@ -376,91 +381,115 @@ class PretrainViewMakerSystem(pl.LightningModule):
         #     img_embs = self.get_repr(img)  # Need encoding of image without augmentations (only normalization).
         embs1 = emb_dict['view1_embs_d']
         embs2 = emb_dict['view1_embs_s']
-        labels1 = batch[-2].cpu().numpy()
-        labels2 = batch[-1].cpu().numpy()
+        labels1 = batch[-2]
+        labels2 = batch[-1]
         softmax = torch.nn.Softmax(dim=1)
-        preds1 = np.argmax(softmax(embs1).cpu().numpy(),axis=1)
-        preds2 = np.argmax(softmax(embs2).cpu().numpy(),axis=1)
-        num_d = np.sum(labels1 == preds1)
-        num_s = np.sum(labels2 == preds2)
+        preds1 = torch.argmax(softmax(embs1),dim=1)
+        preds2 = torch.argmax(softmax(embs2),dim=1)
+        # num_d = np.sum(labels1 == preds1)
+        # num_s = np.sum(labels2 == preds2)
         encoder_loss, view_maker_loss = self.get_losses_for_batch(emb_dict, train=False)
-
+        self.a.update(preds1, labels1)
+        self.a2.update(preds2, labels2)
+        self.f.update(preds1, labels1)
+        self.f2.update(preds2, labels2)
+        self.cm.update(preds1, labels1)
+        self.cm2.update(preds2,labels2)
         # num_correct, batch_size = self.get_nearest_neighbor_label(img_embs, labels)
+        
+        # output = OrderedDict({
+        #     'val_loss': encoder_loss + view_maker_loss,
+        #     'val_encoder_loss': encoder_loss,
+        #     'val_view_maker_loss': view_maker_loss,
+        #     'val_dp': preds1,
+        #     'val_gp' :preds2,
+        #     'val_dl':labels1,
+        #     'val_gl':labels2,
+        #     'val_s': num_s,
+        #     'val_d': num_d,
+        #     'val_num_total': labels1.shape[0],
+        # })
 
-        output = OrderedDict({
-            'val_loss': encoder_loss + view_maker_loss,
-            'val_encoder_loss': encoder_loss,
-            'val_view_maker_loss': view_maker_loss,
-            'val_dp': preds1,
-            'val_gp' :preds2,
-            'val_dl':labels1,
-            'val_gl':labels2,
-            'val_s': num_s,
-            'val_d': num_d,
-            'val_num_total': labels1.shape[0],
-        })
-
-        self.validation_step_outputs.append(output)
-        return output
-
+        # self.validation_step_outputs.append(output)
+        return encoder_loss, view_maker_loss
+    # def validation_step_end(self, batch_parts):
+    #     # gpu_0_prediction = batch_parts.pred[0]['val_s']
+    #     # gpu_1_prediction = batch_parts.pred[1]['Val_s']
+    #     # print(gpu_0_prediction, gpu_1_prediction)
+    #     print("BP",batch_parts)
+    #     # do something with both outputs
+    #     return 2
     def validation_epoch_end(self, output):
-        outputs= self.validation_step_outputs
-        metrics = {}
+        # print(len(self.all_gather(output)),"number of outputs from val_steps")
+        # outputs= self.validation_step_outputs
+        # metrics = {}
         # for key in outputs[0].keys():
         #     try:
         #         metrics[key] = np.stack([elem[key] for elem in outputs]).mean()
         #     except:
         #         pass
 
-        num_correct_d =sum([out['val_d'] for out in outputs])
-        num_correct_s = sum([out['val_s'] for out in outputs])
-        num_total = sum([out['val_num_total'] for out in outputs])
-        val_acc_d = num_correct_d / float(num_total)
-        val_acc_s= num_correct_s / float(num_total)
-        preds1 = [out['val_dp'] for out in outputs]
-        preds_d = [p for pre in preds1 for p in pre ]
+        # num_correct_d =sum([out['val_d'] for out in outputs])
+        # num_correct_s = sum([out['val_s'] for out in outputs])
+        # num_total = sum([out['val_num_total'] for out in outputs])
 
-        preds2 = [out['val_gp'] for out in outputs]
-        preds_g = [p  for pre in preds2 for p in pre]
+        # val_acc_d = num_correct_d / float(num_total)
+        # val_acc_s= num_correct_s / float(num_total)
+        # preds1 = [out['val_dp'] for out in outputs]
+        # preds_d = [p for pre in preds1 for p in pre ]
 
-        lbls1 = [out['val_dl'] for out in outputs]
-        lbls_d = [p for pre in lbls1 for p in pre ]
+        # preds2 = [out['val_gp'] for out in outputs]
+        # preds_g = [p  for pre in preds2 for p in pre]
 
-        lbls2 = [out['val_gl'] for out in outputs]
-        lbls_g = [p for pre in lbls2 for p in pre ]
-        confmat = ConfusionMatrix(task="multiclass", num_classes=3)
-        confmat2 = ConfusionMatrix(task="multiclass", num_classes=4)
-        f1_calc = F1Score(task="multiclass", num_classes=3)
-        f1_calc2 = F1Score(task="multiclass", num_classes=4)
-        f1_d = f1_calc( torch.tensor(lbls_d), torch.tensor(preds_d))
-        f1_g = f1_calc2( torch.tensor(lbls_g),torch.tensor(preds_g))
-        c_d = confmat(torch.tensor(lbls_d), torch.tensor(preds_d))
-        c_g = confmat2(torch.tensor(lbls_g),torch.tensor(preds_g))
+        # lbls1 = [out['val_dl'] for out in outputs]
+        # lbls_d = [p for pre in lbls1 for p in pre ]
+
+        # lbls2 = [out['val_gl'] for out in outputs]
+        # lbls_g = [p for pre in lbls2 for p in pre ]
+        # print(num_total, "total", len(lbls2), len(lbls_d),len(preds1), len(preds_g))
+
+        # f1_d = f1_calc( torch.tensor(lbls_d), torch.tensor(preds_d))
+        # f1_g = f1_calc2( torch.tensor(lbls_g),torch.tensor(preds_g))
+        # c_d = confmat(torch.tensor(lbls_d), torch.tensor(preds_d))
+        # c_g = confmat2(torch.tensor(lbls_g),torch.tensor(preds_g))
        # metrics['val_acc_'] = val_acc
         #progress_bar_d = {'acc': val_acc_d}
         # progress_bar = {'acc_s': val_acc_s,'acc_d':val_acc_d}
-        self.validation_step_outputs.clear()
-        d = {'log': metrics,
-                'val_acc_d': val_acc_d,
-                'val_acc_s': val_acc_s,
-                'f1_d':f1_d,
-                'f1_g':f1_g,
-                'c_d':c_d,
-                'c_g':c_g
+        # self.validation_step_outputs.clear()
+
+        a = self.a.compute()
+        a2 =self.a2.compute()
+        f = self.f.compute()
+        f2 =self.f2.compute()
+        cm = self.cm.compute()
+        cm2 = self.cm2.compute()
+        d = {
+                'val_acc_d': a,
+                'val_acc_s': a2,
+                'f1_d':f,
+                'f1_g':f2,
+                'c_d':cm,
+                'c_g':cm2
                 }
-        with open(f"./metricseval{self.config.model_params.view_bound_magnitude}age.txt", 'a') as f:
+        with open(f"./metricseval{self.config.model_params.view_bound_magnitude}age4class.txt", 'a') as f:
             f.write("")
             f.write(f"epoch")
             f.write(str(d))
+        self.a.reset()
+        self.a2.reset()
+        self.f.reset()
+        self.f2.reset()
+        self.cm.reset()
+        self.cm2.reset()
         if self.current_epoch>0:
             print("greater than 1 epoch")
-            if self.best_att>f1_g:
-                self.best_att = f1_g
+            if self.best_att>f2:
+                self.best_att = f2
                 # print(self.best_att)
                 torch.save(self.viewmaker.state_dict(),'/home/opc/'+'vmkage'+str(self.current_epoch)+"f1 {}".format(self.best_att))
-        return {'log': metrics,
-                'val_acc_d': val_acc_d,
-                'val_acc_s': val_acc_s
+        return {
+                'val_acc_d': a,
+                'val_acc_s': a2
                 }
 
     # def optimizer_step(self, current_epoch, batch_nb, optimizer, optimizer_idx, 

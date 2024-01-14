@@ -88,9 +88,10 @@ def run(args, gpu_device=None):
     train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True)
     
 
-
+    # print("===================DATA LOADER LEN FOR Train",len(train_loader))
     valid_dataset = RETINAL(train=False, image_transforms=True,age=True)
     valid_loader = DataLoader(valid_dataset, batch_size=16, shuffle=False)
+    # print("===================DATA LOADER LEN FOR VAL",len(valid_loader))
 
     trainer.fit(system, train_loader, valid_loader)
 
