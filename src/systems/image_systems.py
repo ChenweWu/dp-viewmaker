@@ -7,13 +7,14 @@ import numpy as np
 from dotmap import DotMap
 from collections import OrderedDict
 
-from sklearn.metrics import accuracy_score, f1_score,confusion_matrix,multilabel_confusion_matrix, roc_curve, auc, precision_recall_curve
+# from sklearn.metrics import accuracy_score, f1_score,confusion_matrix,multilabel_confusion_matrix, roc_curve, auc, precision_recall_curve
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 import torchvision
-
+# from sklearn.metrics import accuracy_score, f1_score,confusion_matrix
+from torchmetrics import F1Score, ConfusionMatrix
 from src.datasets import datasets
 from src.models import resnet_small, resnet, models
 from src.models.transfer import LogisticRegression
@@ -45,6 +46,22 @@ def create_dataloader(dataset, config, batch_size, shuffle=True, drop_last=True)
     )
     return loader
 
+class RN2(nn.Module):
+    def __init__(self, n_classes, model_name='resnet200d'):
+        super().__init__()
+        self.model = timm.create_model(model_name, pretrained=True)
+        n_features = self.model.fc.in_features
+        self.model.global_pool = nn.Identity()
+        self.model.fc = nn.Identity()
+        self.pooling = nn.AdaptiveAvgPool2d(1)
+        self.fc = nn.Linear(n_features, n_classes)
+
+    def forward(self, x):
+        bs = x.size(0)
+        features = self.model(x)
+        pooled_features = self.pooling(features).view(bs, -1)
+        output = self.fc(pooled_features)
+        return output
 
 class PretrainViewMakerSystem(pl.LightningModule):
     '''Pytorch Lightning System for self-supervised pretraining 
@@ -81,7 +98,10 @@ class PretrainViewMakerSystem(pl.LightningModule):
         class_dis = [12482, 574,345]
         class_weights =1-class_dis/np.sum(class_dis)
         print(class_weights)
-        gender_dis = [5073,8328]
+        # gender_dis = [5073,8328]
+        # gender_dis = [3168, 3076,7075]#age class distribution 3
+
+        gender_dis = [2363, 2154, 2490, 2312] #age class distribution 4
         gender_weights = 1-gender_dis/np.sum(gender_dis)
         print(gender_weights)
         # view_maker_loss_weight = self.config.loss_params.view_maker_loss_weight
@@ -98,9 +118,17 @@ class PretrainViewMakerSystem(pl.LightningModule):
 
     def load_attacker(self, attacker_path, val = False):
 
-        model = models.Resnet200D(model_name='resnet200d', number_of_classes=2)
+        model = RN2( n_classes=4)
+        # print(torch.load('/home/opc/br-3class')['model'].keys())
+            # Use DataParallel to parallelize the model across multiple GPUs
+        # if torch.cuda.device_count() > 1:
+        #     print("Using", torch.cuda.device_count(), "GPUs!")
+        #     model = nn.DataParallel(model, [0,1])
+        state_dict = torch.load('/home/opc/br-4class')['model']
+        remove_prefix = 'module.'
+        state_dict = {k[len(remove_prefix):] if k.startswith(remove_prefix) else k: v for k, v in state_dict.items()}
         if val:
-            model.load_state_dict(torch.load('/home/ubuntu/resnet1')['model'])  # 路径缺失
+            model.load_state_dict(state_dict)  # 路径缺失
         return model
 
     def create_encoder(self):
@@ -124,7 +152,8 @@ class PretrainViewMakerSystem(pl.LightningModule):
         #         encoder_model.fc,
         #     )
         model = models.Resnet200D(model_name='resnet200d', number_of_classes=3)
-        model.load_state_dict(torch.load('/home/ubuntu/output/br_dr/orig/resnet200d epoch 9f1 0.7964485249635244full wd')['model'])
+        model.load_state_dict(torch.load('/home/opc/resnet200d_orig')['model'])
+        # model = nn.DataParallel(model, [0,1])
         return model
 
     def create_viewmaker(self):
@@ -142,6 +171,7 @@ class PretrainViewMakerSystem(pl.LightningModule):
         # print(a.keys())
         #finetuning
         # view_model.load_state_dict(torch.load('/home/ubuntu/vmkstd4f1 0.6601222145115274'))
+        # view_model = nn.DataParallel(view_model, device_ids [0,1])
         return view_model
 
     def noise(self, batch_size, device):
@@ -373,7 +403,7 @@ class PretrainViewMakerSystem(pl.LightningModule):
         self.validation_step_outputs.append(output)
         return output
 
-    def on_validation_epoch_end(self):
+    def validation_epoch_end(self, output):
         outputs= self.validation_step_outputs
         metrics = {}
         # for key in outputs[0].keys():
@@ -398,10 +428,14 @@ class PretrainViewMakerSystem(pl.LightningModule):
 
         lbls2 = [out['val_gl'] for out in outputs]
         lbls_g = [p for pre in lbls2 for p in pre ]
-        f1_d = f1_score( lbls_d, preds_d,average='macro')
-        f1_g = f1_score( lbls_g,preds_g, average='macro')
-        c_d = confusion_matrix(lbls_d, preds_d)
-        c_g = confusion_matrix(lbls_g,preds_g)
+        confmat = ConfusionMatrix(task="multiclass", num_classes=3)
+        confmat2 = ConfusionMatrix(task="multiclass", num_classes=4)
+        f1_calc = F1Score(task="multiclass", num_classes=3)
+        f1_calc2 = F1Score(task="multiclass", num_classes=4)
+        f1_d = f1_calc( torch.tensor(lbls_d), torch.tensor(preds_d))
+        f1_g = f1_calc2( torch.tensor(lbls_g),torch.tensor(preds_g))
+        c_d = confmat(torch.tensor(lbls_d), torch.tensor(preds_d))
+        c_g = confmat2(torch.tensor(lbls_g),torch.tensor(preds_g))
        # metrics['val_acc_'] = val_acc
         #progress_bar_d = {'acc': val_acc_d}
         # progress_bar = {'acc_s': val_acc_s,'acc_d':val_acc_d}
@@ -414,7 +448,7 @@ class PretrainViewMakerSystem(pl.LightningModule):
                 'c_d':c_d,
                 'c_g':c_g
                 }
-        with open("./metricseval2.txt", 'a') as f:
+        with open(f"./metricseval{self.config.model_params.view_bound_magnitude}age.txt", 'a') as f:
             f.write("")
             f.write(f"epoch")
             f.write(str(d))
@@ -423,7 +457,7 @@ class PretrainViewMakerSystem(pl.LightningModule):
             if self.best_att>f1_g:
                 self.best_att = f1_g
                 # print(self.best_att)
-                torch.save(self.viewmaker.state_dict(),'/home/ubuntu/'+'vmkstd'+str(self.current_epoch)+"f1 {}".format(self.best_att))
+                torch.save(self.viewmaker.state_dict(),'/home/opc/'+'vmkage'+str(self.current_epoch)+"f1 {}".format(self.best_att))
         return {'log': metrics,
                 'val_acc_d': val_acc_d,
                 'val_acc_s': val_acc_s
@@ -481,15 +515,7 @@ class PretrainViewMakerSystem(pl.LightningModule):
         
         return encoder_optim, view_optim
 
-    def train_dataloader(self):
-        train_dataset = RETINAL(image_transforms=True)
-        train_loader = DataLoader(train_dataset, batch_size=self.batch_size, shuffle=True)
-        return train_loader
 
-    def val_dataloader(self):
-        valid_dataset = RETINAL(train=False, image_transforms=True)
-        valid_loader = DataLoader(valid_dataset, batch_size=self.batch_size, shuffle=False)
-        return valid_loader
 
 #==============================================X RAY=============================
 
@@ -1333,12 +1359,6 @@ class TransferViewMakerSystem(pl.LightningModule):
             )
         return [optim], []
 
-    def train_dataloader(self):
-        return create_dataloader(self.train_dataset, self.config, self.batch_size)
-
-    def val_dataloader(self):
-        return create_dataloader(self.val_dataset, self.config, self.batch_size, 
-                                 shuffle=False, drop_last=False)
 
 
 class TransferExpertSystem(TransferViewMakerSystem):

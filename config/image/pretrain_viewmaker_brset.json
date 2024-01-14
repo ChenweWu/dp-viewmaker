@@ -3,9 +3,9 @@
     "exp_name": "pretrain_viewmaker_cifar_simclr_resnet18",
     "system": "PretrainViewMakerSystem",
     "cuda": true,
-    "gpu_device": 0,
-    "x_ray": true,
-    "distributed_backend": "ddp",
+    "gpu_device": -1,
+    "x_ray": false,
+    "distributed_backend": "dp",
     "seed": 2,
     "data_loader_workers": 8,
     "data_params": {
@@ -18,7 +18,7 @@
         "resnet_small": true,
         "projection_head": true,
         "noise_dim": 100,
-        "view_bound_magnitude": 0.7,
+        "view_bound_magnitude": 0.5,
         "num_res_blocks": 3
     },
     "loss_params": {

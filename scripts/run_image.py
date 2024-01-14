@@ -5,9 +5,10 @@ from src.utils.utils import load_json
 from src.utils.setup import process_config
 from src.utils.callbacks import MoCoLRScheduler
 import random, torch, numpy
-
+from src.datasets.brset import RETINAL
 import pytorch_lightning as pl
 # import wandb
+from torch.utils.data import DataLoader
 
 torch.backends.cudnn.benchmark = True
 
@@ -69,21 +70,29 @@ def run(args, gpu_device=None):
     # wandb.init(project='image', entity='viewmaker', name=config.exp_name, config=config, sync_tensorboard=True)
     trainer = pl.Trainer(
         default_root_dir=config.exp_dir,
-        accelerator = 'auto',
+        accelerator = 'gpu',
          # 'ddp' is usually faster, but we use 'dp' so the negative samples 
          # for the whole batch are used for the SimCLR loss
         # distributed_backend=config.distributed_backend or 'dp',
         max_epochs=config.num_epochs,
         min_epochs=config.num_epochs,
-      
+        devices = 2,
+        strategy = 'ddp',
         # resume_from_checkpoint=args.ckpt or config.continue_from_checkpoint,
         profiler=args.profiler,
         precision=config.optim_params.precision or 32,
-        callbacks=all_callbacks,
-        val_check_interval=config.val_check_interval or 1.0,
-        limit_val_batches=config.limit_val_batches or 1.0,
+        callbacks=all_callbacks
     )
-    trainer.fit(system)
+
+    train_dataset = RETINAL(image_transforms=True,age=True)
+    train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True)
+    
+
+
+    valid_dataset = RETINAL(train=False, image_transforms=True,age=True)
+    valid_loader = DataLoader(valid_dataset, batch_size=16, shuffle=False)
+
+    trainer.fit(system, train_loader, valid_loader)
 
 
 def seed_everything(seed):

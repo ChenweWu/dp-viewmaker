@@ -3,6 +3,7 @@
 wandb
 .log
 .npy
-data/
+dataset/a-brazilian-multilabel-ophthalmological-dataset-brset-1.0.0/fundus_photos/
 .pyc
 __pycache__
+experiments/
