@@ -1,4 +1,3 @@
-
 import os
 import sys
 from urllib import request
@@ -25,11 +24,12 @@ class ChexpertSmall(Dataset):
     # select only the competition labels
     attr_names = ['Atelectasis', 'Cardiomegaly', 'Consolidation', 'Edema', 'Pleural Effusion']
 
-    def __init__(self, root, mode='train', transform=None, data_filter=None, mini_data=50000):
+    def __init__(self, root, mode='train', transform=None, class_type = 4, data_filter=None, mini_data=None):
         self.root = root
         self.transform = transform
         assert mode in ['train', 'valid', 'test', 'vis']
         self.mode = mode
+        self.class_type = class_type 
         # self.gender_labels = ['Male', 'Female']
         # if mode is test; root is path to csv file (in test mode), construct dataset from this csv;
         # if mode is train/valid; root is path to data folder with `train`/`valid` csv file to construct dataset.
@@ -38,7 +38,7 @@ class ChexpertSmall(Dataset):
             self.root = '.'  # base path; to be joined to filename in csv file in __getitem__
             self.data[self.attr_names] = pd.DataFrame(np.zeros((len(self.data), len(self.attr_names))))  # attr is vector of 0s under test
         else:
-            self._maybe_download_and_extract()
+            #self._maybe_download_and_extract()# failing in windows..
             self._maybe_process(data_filter)
 
             data_file = os.path.join(self.root, self.dir_name, 'valid.pt' if mode in ['valid', 'vis'] else 'train.pt')
@@ -71,9 +71,34 @@ class ChexpertSmall(Dataset):
         # store index of the selected attributes in the columns of the data for faster indexing
         self.attr_idxs = [self.data.columns.tolist().index(a) for a in self.attr_names]
 
+    def age_range_to_label(self, age):
+        if age <= 47:
+            return 0
+        elif 47 < age <= 61:
+            return 1
+        elif 61 < age <= 71:
+            return 2
+        else:
+            return 3
+        
+    def age_range_to_3_class(self, age):
+        if age <= 54:
+            return 0
+        elif 54 < age <= 69:
+            return 1
+        else:
+            return 2
+        
+    def age_range_to_2_class(self, age):
+        if age <= 63:
+            return 0
+        else:
+            return 1
+        
     def __getitem__(self, idx):
         # 1. select and load image
         img_path = self.data.iloc[idx, 0]  # 'Path' column is 0
+        # print(img_path, "image path")
         img = Image.open(os.path.join(self.root, img_path))
         img = img.convert('RGB')
         if self.transform is not None:
@@ -88,13 +113,29 @@ class ChexpertSmall(Dataset):
         idx = self.data.index[idx]  # idx is based on len(self.data); if we are taking a subset of the data, idx will be relative to len(subset);
                                     # self.data.index(idx) pulls the index in the original dataframe and not the subset
         # 4.添加性别标签
-        gender = self.data.iloc[idx]['Sex']
+        
+        #gender = self.data.iloc[idx]['Sex']
         # Convert gender to numeric label
-        if gender == 'Male':
-            label = torch.tensor(0, dtype=torch.float32)  # 男性
-        else:
-            label = torch.tensor(1, dtype=torch.float32)  # 女性
-        # print(img.shape, label.shape, attr.shape)
+        #if gender == 'Male':
+        #    label = torch.tensor(0, dtype=torch.float32)  # 男性
+        #else:
+        #    label = torch.tensor(1, dtype=torch.float32)  # 女性
+
+         # 4. Extract age information and convert to numeric label
+        #import pdb;pdb.set_trace()
+        age = self.data.iloc[idx]['Age']
+        if self.class_type == 1:
+            label = age
+        if self.class_type == 2:
+            label = self.age_range_to_2_class(age)
+            # print("Using 2 classes")
+        if self.class_type == 3:
+            label = self.age_range_to_3_class(age)
+            # print("Using 3 classes")
+        if self.class_type == 4:
+            label = self.age_range_to_label(age)
+            # print("Using 4 classes")
+        label = torch.tensor(label, dtype=torch.float32)
         return img, label, attr, idx
 
     def __len__(self):
@@ -183,31 +224,31 @@ def compute_mean_and_std(dataset):
     return m, math.sqrt(s/(k-1))
 
 
-# if __name__ == '__main__':
-#     import argparse
-#     parser = argparse.ArgumentParser()
-#     parser.add_argument('data_dir', type=str, help='Data directory.')
-#     args = parser.parse_args()
-#
-#     ds = ChexpertSmall(root=args.data_dir, mode='train')
-#     print('Train dataset loaded. Length: ', len(ds))
-#
-#     output_dir = 'results/test/'
+if __name__ == '__main__':
+     import argparse
+     parser = argparse.ArgumentParser()
+     parser.add_argument('data_dir', type=str, help='Data directory.')
+     args = parser.parse_args()
 
-    # output a few images from the validation set and display labels
-    # if True:
-    #     import torchvision.transforms as T
-    #     from torchvision.utils import save_image
-    #     ds = ChexpertSmall(root=args.data_dir, mode='valid',
-    #             transform=T.Compose([T.CenterCrop(320), T.ToTensor(), T.Normalize(mean=[0.5330], std=[0.0349])]))
-    #     print('Valid dataset loaded. Length: ', len(ds))
-        # for i in range(10):
-        #     img, attr, patient_id = ds[i]
-        #     save_image(img, 'test_valid_dataset_image_{}.png'.format(i), normalize=True, scale_each=True)
-        #     print('Patient id: {}; labels: {}'.format(patient_id, attr))
-    #
-    # if False:
-    #     ds = ChexpertSmall(root=args.data_dir, mode='train', transform=T.Compose([T.CenterCrop(320), T.ToTensor()]))
-    #     m, s = compute_mean_and_std(ds)
-    #     print('Dataset mean: {}; dataset std {}'.format(m, s))
-    #     # Dataset mean: 0.533048452958796; dataset std 0.03490651403764978
+     ds = ChexpertSmall(root=args.data_dir, mode='train')
+     print('Train dataset loaded. Length: ', len(ds))
+
+     output_dir = 'results/test/'
+   # output a few images from the validation set and display labels
+     if True:
+         import torchvision.transforms as T
+         from torchvision.utils import save_image
+         ds = ChexpertSmall(root=args.data_dir, mode='valid',
+                 transform=T.Compose([T.CenterCrop(320), T.ToTensor(), T.Normalize(mean=[0.5330], std=[0.0349])]))
+         print('Valid dataset loaded. Length: ', len(ds))
+         for i in range(10):
+             img, attr, patient_id = ds[i]
+             save_image(img, 'test_valid_dataset_image_{}.png'.format(i), normalize=True, scale_each=True)
+             print('Patient id: {}; labels: {}'.format(patient_id, attr))
+    
+     if False:
+         ds = ChexpertSmall(root=args.data_dir, mode='train', transform=T.Compose([T.CenterCrop(320), T.ToTensor()]))
+         m, s = compute_mean_and_std(ds)
+         print('Dataset mean: {}; dataset std {}'.format(m, s))
+         # Dataset mean: 0.533048452958796; dataset std 0.03490651403764978
+

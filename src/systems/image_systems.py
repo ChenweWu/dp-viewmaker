@@ -14,7 +14,7 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 import torchvision
 # from sklearn.metrics import accuracy_score, f1_score,confusion_matrix
-from torchmetrics import F1Score, ConfusionMatrix, Accuracy
+from torchmetrics import F1Score, ConfusionMatrix, Accuracy, AUROC
 from src.datasets import datasets
 from src.models import resnet_small, resnet, models
 from src.models.transfer import LogisticRegression
@@ -62,7 +62,7 @@ class RN2(nn.Module):
         pooled_features = self.pooling(features).view(bs, -1)
         output = self.fc(pooled_features)
         return output
-
+# python scripts/run_image.py config/image/pretrain_viewmaker_xray.json --gpu-device -1
 class PretrainViewMakerSystem(pl.LightningModule):
     '''Pytorch Lightning System for self-supervised pretraining 
     with adversarially generated views.
@@ -110,8 +110,8 @@ class PretrainViewMakerSystem(pl.LightningModule):
         self.best_att = 0.99
         self.cm = ConfusionMatrix(task="multiclass", num_classes=3)
         self.cm2 = ConfusionMatrix(task="multiclass", num_classes=4)
-        self.f = F1Score(task="multiclass", num_classes=3)
-        self.f2 = F1Score(task="multiclass", num_classes=4)
+        self.f = F1Score(task="multiclass", num_classes=3,average='macro')
+        self.f2 = F1Score(task="multiclass", num_classes=4,average='macro')
         self.a = Accuracy(task="multiclass", num_classes=3)
         self.a2 = Accuracy(task="multiclass", num_classes=4)
     def view(self, imgs):
@@ -527,7 +527,7 @@ class PretrainViewMakerSystem(pl.LightningModule):
 
         
         # view_parameters = list(self.viewmaker.parameters())+list(self.attacker.parameters())
-        view_parameters = list(self.viewmaker.parameters())
+        view_parameters = list(self.viewmaker.parameters())+list(self.model.parameters())
         
         if view_optim_name == 'adam':
             view_optim = torch.optim.Adam(
@@ -590,6 +590,14 @@ class PretrainXRayViewMakerSystem(pl.LightningModule):
         self.fl_e = MFocalLoss()
         self.fl_v = FocalLoss()
         self.best_att = 0.99
+        # self.cm = ConfusionMatrix(task="multilabel", num_labels=5)
+        self.cm2 = ConfusionMatrix(task="multiclass", num_classes=4)
+        # self.f = F1Score(task="multilabel", num_labels=5,average='macro')
+        self.f2 = F1Score(task="multiclass", num_classes=4,average='macro')
+        self.auc = AUROC(task = "multilabel",num_labels = 5, average = 'none')
+        # self.a = Accuracy(task="multilabel", num_labels=5)
+        self.a2 = Accuracy(task="multiclass", num_classes=4)
+
     def compute_metrics(self, outputs, targets):
         print(outputs.shape,targets.shape)
         n_classes = outputs.shape[1]
@@ -617,9 +625,9 @@ class PretrainXRayViewMakerSystem(pl.LightningModule):
 
     def load_attacker(self, attacker_path, val = False):
 
-        model = resnet_var.resnet200D_v( num_classes=2)
+        model = resnet_var.resnet200D_v( num_classes=4)
         if val:
-            model.load_state_dict(torch.load('/home/ubuntu/attacker_xray.pth')) 
+            model.load_state_dict(torch.load('/home/opc/model_exp2.pth')) 
         return model
 
     def create_encoder(self):
@@ -645,7 +653,7 @@ class PretrainXRayViewMakerSystem(pl.LightningModule):
 
         model = timm.create_model('resnet200d', pretrained=True)
         model.fc = nn.Linear(model.fc.in_features, out_features=5)
-        model.load_state_dict(torch.load('/home/ubuntu/Xray/results/2023-12-07_02-22-15/best_checkpoints/checkpoint_2.pt')['state_dict'])
+        model.load_state_dict(torch.load('/home/opc/checkpoint_2.pt')['state_dict'])
         return model
 
     def create_viewmaker(self):
@@ -694,6 +702,7 @@ class PretrainXRayViewMakerSystem(pl.LightningModule):
     def forward(self, batch, train=True):
         # indices, img, labels1, labels2 = batch
         img, labels2, labels1, indices = batch
+        # print(img.shape)
         if self.loss_name == 'FocalLoss':
             view1 = self.view(img)
             view1_embs_d = self.model(view1)
@@ -759,7 +768,7 @@ class PretrainXRayViewMakerSystem(pl.LightningModule):
             )
             encoder_loss = loss_function_viewmaker
 
-            view_maker_loss = -1 * self.viewmaker_loss_weight * loss_function_viewmaker 
+            view_maker_loss = -1 * self.viewmaker_loss_weight * loss_function_viewmaker + loss_function_encoder.sum(1).mean(0)
             # print("EL",encoder_loss,"VL",view_maker_loss,"VL_S",loss_function_viewmaker)
             # finetuning
             # view_maker_loss = loss_function_encoder
@@ -869,94 +878,114 @@ class PretrainXRayViewMakerSystem(pl.LightningModule):
         #     img_embs = self.get_repr(img)  # Need encoding of image without augmentations (only normalization).
         embs1 = emb_dict['view1_embs_d']
         embs2 = emb_dict['view1_embs_s']
-        labels1 = labels1.cpu().numpy()
-        labels2 = labels2.cpu().numpy()
+        labels1 = labels1.long()
+        labels2 = labels2.long()
         sig= torch.nn.Sigmoid()
         sof = torch.nn.Softmax(dim=1)
-        preds1 = sig(embs1).cpu().numpy()
+        preds1 = sig(embs1)
 
-        preds2 = np.argmax(sof(embs2).cpu().numpy(),axis=1)
+        preds2 = torch.argmax(sof(embs2),dim=1)
         # print(preds2)
-        num_d = np.sum(labels1 == preds1)
-        num_s = np.sum(labels2 == preds2)
+        # num_d = np.sum(labels1 == preds1)
+        # num_s = np.sum(labels2 == preds2)
         encoder_loss, view_maker_loss = self.get_losses_for_batch(emb_dict, train=False)
-
+        # print(preds1)
+        # self.a.update(preds1, labels1)
+        self.a2.update(preds2, labels2)
+        # self.f.update(preds1, labels1)
+        self.f2.update(preds2, labels2)
+        self.auc.update(preds1, labels1)
+        self.cm2.update(preds2,labels2)
         # num_correct, batch_size = self.get_nearest_neighbor_label(img_embs, labels)
 
-        output = OrderedDict({
-            'val_loss': encoder_loss + view_maker_loss,
-            'val_encoder_loss': encoder_loss,
-            'val_view_maker_loss': view_maker_loss,
-            'val_dp': preds1,
-            'val_gp' :preds2,
-            'val_dl':labels1,
-            'val_gl':labels2,
-            'val_s': num_s,
-            'val_d': num_d,
-            'val_num_total': labels1.shape[0],
-        })
+        # output = OrderedDict({
+        #     'val_loss': encoder_loss + view_maker_loss,
+        #     'val_encoder_loss': encoder_loss,
+        #     'val_view_maker_loss': view_maker_loss,
+        #     'val_dp': preds1,
+        #     'val_gp' :preds2,
+        #     'val_dl':labels1,
+        #     'val_gl':labels2,
+        #     'val_s': num_s,
+        #     'val_d': num_d,
+        #     'val_num_total': labels1.shape[0],
+        # })
 
-        self.validation_step_outputs.append(output)
-        return output
+        # self.validation_step_outputs.append(output)
+        return encoder_loss, view_maker_loss
 
-    def on_validation_epoch_end(self):
-        outputs= self.validation_step_outputs
-        metrics = {}
-        # for key in outputs[0].keys():
-        #     try:
-        #         metrics[key] = np.stack([elem[key] for elem in outputs]).mean()
-        #     except:
-        #         pass
+    def validation_epoch_end(self,output):
+    #     outputs= self.validation_step_outputs
+    #     metrics = {}
+    #     # for key in outputs[0].keys():
+    #     #     try:
+    #     #         metrics[key] = np.stack([elem[key] for elem in outputs]).mean()
+    #     #     except:
+    #     #         pass
 
-        num_correct_d =sum([out['val_d'] for out in outputs])
-        num_correct_s = sum([out['val_s'] for out in outputs])
-        num_total = sum([out['val_num_total'] for out in outputs])
-        val_acc_d = num_correct_d / float(num_total)
-        val_acc_s= num_correct_s / float(num_total)
-        preds1 = [out['val_dp'] for out in outputs]
-        preds_d = [p.reshape(1,-1) for pre in preds1 for p in pre ]
+    #     num_correct_d =sum([out['val_d'] for out in outputs])
+    #     num_correct_s = sum([out['val_s'] for out in outputs])
+    #     num_total = sum([out['val_num_total'] for out in outputs])
+    #     val_acc_d = num_correct_d / float(num_total)
+    #     val_acc_s= num_correct_s / float(num_total)
+    #     preds1 = [out['val_dp'] for out in outputs]
+    #     preds_d = [p.reshape(1,-1) for pre in preds1 for p in pre ]
 
-        preds2 = [out['val_gp'] for out in outputs]
-        preds_g = [p for pre in preds2 for p in pre]
+    #     preds2 = [out['val_gp'] for out in outputs]
+    #     preds_g = [p for pre in preds2 for p in pre]
 
-        lbls1 = [out['val_dl'] for out in outputs]
-        lbls_d = [p.reshape(1,-1) for pre in lbls1 for p in pre ]
+    #     lbls1 = [out['val_dl'] for out in outputs]
+    #     lbls_d = [p.reshape(1,-1) for pre in lbls1 for p in pre ]
 
-        lbls2 = [out['val_gl'] for out in outputs]
-        lbls_g = [p for pre in lbls2 for p in pre ]
-        # print(lbls_g, "g")
-        # print(lbls_d,"d")
-        # print(preds_g, "pg")
-        # print(preds_d,"pd")
+    #     lbls2 = [out['val_gl'] for out in outputs]
+    #     lbls_g = [p for pre in lbls2 for p in pre ]
+    #     # print(lbls_g, "g")
+    #     # print(lbls_d,"d")
+    #     # print(preds_g, "pg")
+    #     # print(preds_d,"pd")
         
-        # f1_d = f1_score( lbls_d, preds_d,average='macro')
-        # print(lbls_g, preds_g)
-        f1_g = f1_score( lbls_g,preds_g, average='macro')
-        # c_d = multilabel_confusion_matrix(lbls_d, preds_d)
-        c_g = confusion_matrix(lbls_g,preds_g)
-        metrics_out_g = {'f1':f1_g,"c_g":c_g}
-       # metrics['val_acc_'] = val_acc
-        #progress_bar_d = {'acc': val_acc_d}
-        # progress_bar = {'acc_s': val_acc_s,'acc_d':val_acc_d}
-        metrics_out_d = self.compute_metrics(np.concatenate(preds_d),np.concatenate(lbls_d))
-        # metrics_out_g = self.compute_metrics(np.concatenate(preds_g),np.concatenate(lbls_g))
-        self.validation_step_outputs.clear()
-        d = {'d': metrics_out_d, 'g':metrics_out_g}
-        with open("./metricseval_xray1.txt", 'a') as f:
+    #     # f1_d = f1_score( lbls_d, preds_d,average='macro')
+    #     # print(lbls_g, preds_g)
+    #     f1_g = f1_score( lbls_g,preds_g, average='macro')
+    #     # c_d = multilabel_confusion_matrix(lbls_d, preds_d)
+    #     c_g = confusion_matrix(lbls_g,preds_g)
+    #     metrics_out_g = {'f1':f1_g,"c_g":c_g}
+    #    # metrics['val_acc_'] = val_acc
+    #     #progress_bar_d = {'acc': val_acc_d}
+    #     # progress_bar = {'acc_s': val_acc_s,'acc_d':val_acc_d}
+    #     metrics_out_d = self.compute_metrics(np.concatenate(preds_d),np.concatenate(lbls_d))
+    #     # metrics_out_g = self.compute_metrics(np.concatenate(preds_g),np.concatenate(lbls_g))
+    #     self.validation_step_outputs.clear()
+        # a = self.a.compute()
+        a2 =self.a2.compute()
+        # f = self.f.compute()
+        f2 =self.f2.compute()
+        auc = self.auc.compute()
+        cm2 = self.cm2.compute()
+        d = {
+            'val_ayc_d': auc,
+            'val_acc_s': a2,
+            # 'f1_d':f,
+            'f1_g':f2,
+            'c_d':cm2,
+            }
+        with open(f"./metricseval_{self.config.model_params.view_bound_magnitude}_xray1.txt", 'a') as f:
             f.write("")
             f.write(f"epoch{self.current_epoch}")
             f.write(str(d))
+        self.auc.reset()
+        self.a2.reset()
+        # self.f.reset()
+        self.f2.reset()
+        # self.cm.reset()
+        self.cm2.reset()
         if self.current_epoch>0:
             print("greater than 1 epoch")
-            if self.best_att>f1_g:
-                self.best_att = f1_g
+            if self.best_att>f2:
+                self.best_att = f2
                 # print(self.best_att)
                 torch.save(self.viewmaker.state_dict(),'/home/ubuntu/'+'vmkray1std'+str(self.current_epoch)+"f1 {}".format(self.best_att))
-        return {'log': metrics,
-                'val_acc_d': val_acc_d,
-                'val_acc_s': val_acc_s
-                }
-
+        return d
     # def optimizer_step(self, current_epoch, batch_nb, optimizer, optimizer_idx, 
     #                    second_order_closure=None, on_tpu=False, using_native_amp=False, using_lbfgs=False):
     #     if not self.config.optim_params.viewmaker_freeze_epoch:
@@ -992,7 +1021,7 @@ class PretrainXRayViewMakerSystem(pl.LightningModule):
 
         
         # view_parameters = list(self.viewmaker.parameters())+list(self.attacker.parameters())
-        view_parameters = list(self.viewmaker.parameters())
+        view_parameters = list(self.viewmaker.parameters()) + list(self.model.parameters())
         
         if view_optim_name == 'adam':
             view_optim = torch.optim.Adam(
@@ -1009,24 +1038,7 @@ class PretrainXRayViewMakerSystem(pl.LightningModule):
         
         return encoder_optim, view_optim
 
-    def train_dataloader(self):
-        transform=T.Compose([T.CenterCrop(320), T.ToTensor(), T.Normalize(mean=[0.5330], std=[0.0349])])
 
-        data_dir = '/home/ubuntu/Xray'
-        # 设置训练集和验证集
-        train_dataset = ChexpertSmall(root=data_dir, mode='train', transform=transform)
-        train_loader = DataLoader(train_dataset, batch_size=self.batch_size, shuffle=True, num_workers=3)
-
-        return train_loader
-
-    def val_dataloader(self):
-        transform=T.Compose([T.CenterCrop(320), T.ToTensor(), T.Normalize(mean=[0.5330], std=[0.0349])])
-
-        data_dir = '/home/ubuntu/Xray'
-        # 设置训练集和验证集
-        val_dataset = ChexpertSmall(root=data_dir, mode='train', transform=transform, mini_data = 1000)
-        valid_loader = DataLoader(val_dataset, batch_size=self.batch_size)
-        return valid_loader
 #=========================================
 
 class PretrainExpertSystem(PretrainViewMakerSystem):

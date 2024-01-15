@@ -9,9 +9,9 @@ from src.datasets.brset import RETINAL
 import pytorch_lightning as pl
 # import wandb
 from torch.utils.data import DataLoader
-
+from src.datasets.chexpert import ChexpertSmall
 torch.backends.cudnn.benchmark = True
-
+import torchvision.transforms as T
 SYSTEM = {
     'PretrainViewMakerSystem': image_systems.PretrainViewMakerSystem,
     'XRay': image_systems.PretrainXRayViewMakerSystem,
@@ -83,14 +83,24 @@ def run(args, gpu_device=None):
         precision=config.optim_params.precision or 32,
         callbacks=all_callbacks
     )
+    transform=T.Compose([T.CenterCrop(320), T.ToTensor(), T.Normalize(mean=[0.5330], std=[0.0349])])
 
-    train_dataset = RETINAL(image_transforms=True,age=True)
-    train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True)
+    data_dir = '/home/opc/'
+    # 设置训练集和验证集
+    train_dataset = ChexpertSmall(root=data_dir, mode='train', transform=transform)
+    train_loader = DataLoader(train_dataset, batch_size=8, shuffle=True, num_workers=3)
+    transform=T.Compose([T.CenterCrop(320), T.ToTensor(), T.Normalize(mean=[0.5330], std=[0.0349])])
+
+    # 设置训练集和验证集
+    val_dataset = ChexpertSmall(root=data_dir, mode='train', transform=transform, mini_data = 1000)
+    valid_loader = DataLoader(val_dataset, batch_size=8)
+    # train_dataset = RETINAL(image_transforms=True,age=True)
+    # train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True)
     
 
-    # print("===================DATA LOADER LEN FOR Train",len(train_loader))
-    valid_dataset = RETINAL(train=False, image_transforms=True,age=True)
-    valid_loader = DataLoader(valid_dataset, batch_size=16, shuffle=False)
+    # # print("===================DATA LOADER LEN FOR Train",len(train_loader))
+    # valid_dataset = RETINAL(train=False, image_transforms=True,age=True)
+    # valid_loader = DataLoader(valid_dataset, batch_size=16, shuffle=False)
     # print("===================DATA LOADER LEN FOR VAL",len(valid_loader))
 
     trainer.fit(system, train_loader, valid_loader)
