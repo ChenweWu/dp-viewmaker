@@ -1,7 +1,7 @@
-# DP-Viewmaker: Neural Obfuscation of Private Attributes in Medical Images
+# DP-Viewmaker: Neural Obfuscation of Private Attributes in Medical Images 
 
 
-
+## Currently, the repo contains code and evaluation for retinal images and Xrays on sex and age. We will keep cleaning and adding the code for experiments and visualization.
 
 ## 0) Background
 
