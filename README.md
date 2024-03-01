@@ -1,10 +1,6 @@
 # DP-Viewmaker: Neural Obfuscation of Private Attributes in Medical Images
 
 
-Umich Class project for EECS598 Biomedical AI with Prof Liyue Shen
-
-Thanks Dr. Alex Tamkin at Stanford for providing the model codes for viewmaker networks.
-Thanks Dr. Leo Anthony Celi, Dr. Luis Nakayama at MIT for providing the datasets and inspirations.
 
 
 ## 0) Background
